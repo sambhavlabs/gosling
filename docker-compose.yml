@@ -1,0 +1,73 @@
+services:
+  # ==============================================================================
+  # PostgreSQL Database Service
+  # ==============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: gosling-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-gosling_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-gosling_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - gosling-net
+
+  # ==============================================================================
+  # Gosling MCP Server Service (Streamable HTTP + SSE)
+  # ==============================================================================
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gosling-mcp-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - PORT=${PORT:-8080}
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-http}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Database Connection (uses docker service name 'postgres')
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-gosling_db}
+      - DB_SSLMODE=disable
+      # Security & JWT
+      - JWT_SECRET=${JWT_SECRET:-super-secret-jwt-signing-key-change-in-production-use-32-chars}
+      - JWT_EXPIRY_HOURS=${JWT_EXPIRY_HOURS:-72}
+      # Google OAuth & ID Token Verification
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URL=${GOOGLE_REDIRECT_URL:-http://localhost:8080/mcp}
+      # Google GenAI / Gemini LLM
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_DEFAULT_MODEL=${GEMINI_DEFAULT_MODEL:-gemini-2.5-flash}
+      # CORS
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gosling-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  gosling-net:
+    driver: bridge
